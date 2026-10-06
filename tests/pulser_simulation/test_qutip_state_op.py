@@ -309,6 +309,91 @@ class TestQutipState:
         ):
             json.dumps(state, cls=AbstractReprEncoder)
 
+    @pytest.mark.parametrize(
+        "eigenstates, amplitudes, qudits, expected",
+        [
+            # Product states are not entangled
+            (("r", "g"), {"rg": 1.0}, [0], 0.0),
+            (("r", "g"), {"rgr": 0.6, "ggr": 0.8}, [1, 2], 0.0),
+            # Bell state
+            (("r", "g"), {"rr": 1.0, "gg": 1.0}, [0], np.log(2)),
+            (("r", "g"), {"rr": 1.0, "gg": 1.0}, (1,), np.log(2)),
+            # GHZ state, for any cut
+            (("0", "1"), {"0000": 1.0, "1111": 1.0}, [0], np.log(2)),
+            (("0", "1"), {"0000": 1.0, "1111": 1.0}, [1, 3], np.log(2)),
+            (("0", "1"), {"0000": 1.0, "1111": 1.0}, {2, 1, 0}, np.log(2)),
+            # The full system is in a pure state
+            (("0", "1"), {"0000": 1.0, "1111": 1.0}, range(4), 0.0),
+            # The empty subsystem is always pure
+            (("0", "1"), {"0000": 1.0, "1111": 1.0}, [], 0.0),
+            # With a leakage state
+            (("r", "g", "x"), {"rr": 1.0, "gx": 1.0}, [0], np.log(2)),
+            (("r", "g", "x"), {"rr": 1.0, "gx": 1.0, "xg": 1.0}, [1], None),
+        ],
+    )
+    def test_entanglement_entropy(
+        self, eigenstates, amplitudes, qudits, expected
+    ):
+        # The amplitudes above are not all normalized on purpose
+        state = QutipState.from_state_amplitudes(
+            eigenstates=eigenstates, amplitudes=amplitudes
+        )
+        qobj = state.to_qobj().unit()
+        if expected is None:
+            expected = qutip.entropy_vn(qobj.ptrace(sorted(qudits)))
+        # -λ*ln(λ) amplifies the numerical noise on the zero eigenvalues
+        # (e.g. λ=1e-10 contributes ~2e-9), hence the explicit tolerance
+        assert np.isclose(
+            state.entanglement_entropy(qudits), expected, atol=1e-6
+        )
+        # Same result with the corresponding density matrix
+        dm_state = QutipState(qobj.proj(), eigenstates=eigenstates)
+        assert np.isclose(
+            dm_state.entanglement_entropy(qudits), expected, atol=1e-6
+        )
+
+    def test_entanglement_entropy_random_state(self):
+        rng = np.random.default_rng(42)
+        amps = rng.normal(size=16) + 1j * rng.normal(size=16)
+        qobj = qutip.Qobj(amps / np.linalg.norm(amps), dims=[[2] * 4, [1]])
+        state = QutipState(qobj, eigenstates=("r", "g"))
+        for qudits in ([0], [3], [0, 1], [1, 3], [0, 2, 3]):
+            assert np.isclose(
+                state.entanglement_entropy(qudits),
+                qutip.entropy_vn(qobj.ptrace(qudits)),
+            )
+
+    def test_entanglement_entropy_mixed_state(self, dm_g):
+        # The maximally mixed state of 2 qubits
+        mixed = QutipState(qutip.qeye([2, 2]) / 4, eigenstates=("r", "g"))
+        # Includes the classical entropy of the mixture
+        assert np.isclose(mixed.entanglement_entropy([0]), np.log(2))
+        assert np.isclose(mixed.entanglement_entropy([0, 1]), 2 * np.log(2))
+        assert np.isclose(dm_g.entanglement_entropy([0]), 0.0, atol=1e-6)
+
+    def test_entanglement_entropy_errors(self, ket_r):
+        state = QutipState.from_state_amplitudes(
+            eigenstates=("r", "g"), amplitudes={"rr": 1.0, "gg": 1.0}
+        )
+        with pytest.raises(
+            ValueError,
+            match=re.escape(
+                "'qudits' must not contain repeated indices; got [0, 0]."
+            ),
+        ):
+            state.entanglement_entropy([0, 0])
+        with pytest.raises(
+            ValueError,
+            match=re.escape(
+                "Got invalid qudit indices {2} for a state with 2 qudits."
+            ),
+        ):
+            state.entanglement_entropy([0, 2])
+        with pytest.raises(ValueError, match="Got invalid qudit indices"):
+            state.entanglement_entropy([-1])
+        with pytest.raises(ValueError, match="Got invalid qudit indices"):
+            ket_r.entanglement_entropy([1])
+
 
 class TestQutipOperator:
 

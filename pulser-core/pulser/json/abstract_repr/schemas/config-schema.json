@@ -27,6 +27,9 @@
                             "$ref": "#/correlation_matrix"
                         },
                         {
+                            "$ref": "#/entanglement_entropy"
+                        },
+                        {
                             "$ref": "#/energy"
                         },
                         {
@@ -431,6 +434,58 @@
             "observable",
             "evaluation_times",
             "one_state",
+            "tag_suffix"
+        ],
+        "additionalProperties": false
+    },
+    "entanglement_entropy": {
+        "description": "cause the emulator to compute the von Neumann entropy of a subsystem of the emulated state",
+        "type": "object",
+        "properties": {
+            "observable": {
+                "description": "tag to distinguish different instances of an observable",
+                "const": "entanglement_entropy"
+            },
+            "evaluation_times": {
+                "$ref": "#/evaluation_times"
+            },
+            "qudits": {
+                "description": "the indices of the qudits in the subsystem; if null, the first half of the qudits",
+                "oneOf": [
+                    {
+                        "type": "array",
+                        "minItems": 1,
+                        "uniqueItems": true,
+                        "items": {
+                            "type": "integer",
+                            "minimum": 0
+                        }
+                    },
+                    {
+                        "type": "null"
+                    }
+                ]
+            },
+            "tag_suffix": {
+                "description": "added to base_tag to distinguish different instances",
+                "type": [
+                    "string",
+                    "null"
+                ]
+            },
+            "default_aggregation_method": {
+                "description": "how values from multiple results are combined",
+                "type": "integer"
+            },
+            "uuid": {
+                "description": "The observable's internal UUID",
+                "type": "string"
+            }
+        },
+        "required": [
+            "observable",
+            "evaluation_times",
+            "qudits",
             "tag_suffix"
         ],
         "additionalProperties": false

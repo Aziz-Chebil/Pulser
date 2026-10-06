@@ -11,6 +11,7 @@ from pulser.backend.default_observables import (
     Energy,
     EnergySecondMoment,
     EnergyVariance,
+    EntanglementEntropy,
     Expectation,
     Fidelity,
     Occupation,
@@ -103,6 +104,8 @@ def _deserialize_observable(
             obs = Occupation(**obs_params)
         case "correlation_matrix":
             obs = CorrelationMatrix(**obs_params)
+        case "entanglement_entropy":
+            obs = EntanglementEntropy(**obs_params)
         case "energy":
             obs = Energy(**obs_params)
         case "energy_second_moment":

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from typing import Any, Generic, Literal, SupportsFloat, Type, TypeVar, Union
 
 import numpy as np
@@ -131,6 +131,29 @@ class State(ABC, Generic[ArgScalarType, ReturnScalarType]):
             The measured bitstrings, by count.
         """
         pass
+
+    def entanglement_entropy(self, qudits: Collection[int], /) -> float:
+        """Computes the von Neumann entropy of a subsystem.
+
+        The subsystem is described by the reduced density matrix ``ρ_A``,
+        obtained by tracing out every qudit not in ``qudits``. Its von
+        Neumann entropy is ``S(ρ_A) = -Tr[ρ_A ln(ρ_A)]``.
+
+        Note:
+            This method is not supported by every state type. If it is not
+            implemented, a ``NotImplementedError`` is raised.
+
+        Args:
+            qudits: The indices of the qudits in the subsystem.
+
+        Returns:
+            The von Neumann entropy of the subsystem (using the natural
+            logarithm).
+        """
+        raise NotImplementedError(
+            f"'{type(self).__name__}' does not support computing the "
+            "entanglement entropy."
+        )
 
     @classmethod
     def from_state_amplitudes(

@@ -39,6 +39,7 @@ from pulser.backend.default_observables import (
     Energy,
     EnergySecondMoment,
     EnergyVariance,
+    EntanglementEntropy,
     Expectation,
     Fidelity,
     Occupation,
@@ -972,6 +973,7 @@ def test_results_aggregation(matching_uuids):
         (Energy, AggregationMethod.MEAN),
         (EnergyVariance, AggregationMethod.SKIP_WARN),
         (EnergySecondMoment, AggregationMethod.MEAN),
+        (EntanglementEntropy, AggregationMethod.MEAN),
     ],
 )
 def test_observable_aggregation_method(obs_cls, default_method):
@@ -1638,3 +1640,56 @@ class TestObservables:
         fid_ghz = Fidelity(ghz_state)
         assert fid_ghz.tag == "fidelity"
         assert np.isclose(fid_ghz.apply(state=ghz_state), 1.0)
+
+    def test_entanglement_entropy(self, ghz_state):
+        # Default: the first half of the qudits
+        entropy = EntanglementEntropy()
+        assert entropy.tag == "entanglement_entropy"
+        assert entropy.qudits is None
+        assert np.isclose(entropy.apply(state=ghz_state), np.log(2))
+
+        entropy = EntanglementEntropy({2, 0}, tag_suffix="02")
+        assert entropy.tag == "entanglement_entropy_02"
+        assert entropy.qudits == (0, 2)
+        assert np.isclose(entropy.apply(state=ghz_state), np.log(2))
+        # Numpy integers are accepted as indices
+        assert EntanglementEntropy(np.arange(3)).qudits == (0, 1, 2)
+        assert np.isclose(
+            EntanglementEntropy(range(3)).apply(state=ghz_state), 0.0
+        )
+
+        product_state = QutipState.from_state_amplitudes(
+            eigenstates=("r", "g"), amplitudes={"rgr": 1.0}
+        )
+        assert np.isclose(
+            EntanglementEntropy().apply(state=product_state), 0.0
+        )
+
+        # With a single qudit, the default subsystem is empty
+        single_qudit = QutipState.from_state_amplitudes(
+            eigenstates=("r", "g"), amplitudes={"r": 1.0}
+        )
+        assert EntanglementEntropy().apply(state=single_qudit) == 0.0
+
+        with pytest.raises(
+            ValueError, match=re.escape("Got invalid qudit indices {3}")
+        ):
+            EntanglementEntropy([3]).apply(state=ghz_state)
+
+    @pytest.mark.parametrize(
+        "qudits, error_type, msg",
+        [
+            (3, TypeError, "'qudits' must be a collection of qudit indices"),
+            ("01", TypeError, "'qudits' must be a collection of qudit"),
+            ({0: 1}, TypeError, "'qudits' must be a collection of qudit"),
+            ([], ValueError, "'qudits' must contain at least one index."),
+            ([0, "1"], TypeError, "The indices in 'qudits' must be integers"),
+            ([True], TypeError, "The indices in 'qudits' must be integers"),
+            ([1.0], TypeError, "The indices in 'qudits' must be integers"),
+            ([0, -1], ValueError, "The indices in 'qudits' must be non-neg"),
+            ([1, 1], ValueError, "'qudits' must not contain repeated indic"),
+        ],
+    )
+    def test_entanglement_entropy_errors(self, qudits, error_type, msg):
+        with pytest.raises(error_type, match=re.escape(msg)):
+            EntanglementEntropy(qudits)

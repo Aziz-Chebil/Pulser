@@ -216,6 +216,40 @@ class QutipState(State[complex, float]):
             {"".join(map(str, k)): v for k, v in new_counts.items()}
         )
 
+    def entanglement_entropy(self, qudits: Collection[int], /) -> float:
+        """Computes the von Neumann entropy of a subsystem.
+
+        The subsystem is described by the reduced density matrix ``ρ_A``,
+        obtained by tracing out every qudit not in ``qudits``. Its von
+        Neumann entropy is ``S(ρ_A) = -Tr[ρ_A ln(ρ_A)]``.
+
+        For a pure state, this is the entanglement entropy between the
+        subsystem and the rest of the system. For a mixed state, it also
+        includes the classical entropy of the mixture.
+
+        Args:
+            qudits: The indices of the qudits in the subsystem.
+
+        Returns:
+            The von Neumann entropy of the subsystem (using the natural
+            logarithm).
+        """
+        qudits_list = list(qudits)
+        if len(set(qudits_list)) != len(qudits_list):
+            raise ValueError(
+                f"'qudits' must not contain repeated indices; got {qudits!r}."
+            )
+        if bad_inds := set(qudits_list) - set(range(self.n_qudits)):
+            raise ValueError(
+                f"Got invalid qudit indices {bad_inds} for a state with "
+                f"{self.n_qudits} qudits. Got 'qudits'={qudits!r}."
+            )
+        if not qudits_list:
+            # The empty subsystem is always in a pure state
+            return 0.0
+        reduced_state = self._state.unit().ptrace(sorted(qudits_list))
+        return float(qutip.entropy_vn(reduced_state))
+
     @classmethod
     def _from_state_amplitudes(
         cls: Type[QutipStateType],

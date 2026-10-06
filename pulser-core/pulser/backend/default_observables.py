@@ -18,7 +18,8 @@ import copy
 import functools
 import warnings
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Collection, Mapping, Sequence
+from numbers import Integral
 from typing import TYPE_CHECKING, Any, Type
 
 from pulser.backend.observable import AggregationMethod, Observable
@@ -434,6 +435,113 @@ class Occupation(Observable):
             ).expect(state)
             for i in range(state.n_qudits)
         ]
+
+
+class EntanglementEntropy(Observable):
+    """Stores the von Neumann entropy of a subsystem at the evaluation times.
+
+    The subsystem ``A`` is described by the reduced density matrix ``ρ_A``,
+    obtained by tracing out every qudit not in ``A``. Its von Neumann
+    entropy, ``S(ρ_A) = -Tr[ρ_A ln(ρ_A)]``, is the entanglement entropy
+    between ``A`` and the rest of the system when the state is pure.
+
+    Note:
+        For a mixed state (e.g. when emulating noise with density matrices),
+        ``S(ρ_A)`` also includes the classical entropy of the mixture, so it
+        is no longer a pure measure of entanglement. Likewise, averaging the
+        values obtained in multiple runs (e.g. noisy trajectories) gives the
+        mean entropy of the runs, not the entropy of the averaged state.
+
+    Note:
+        This observable relies on ``State.entanglement_entropy()``, which is
+        not supported by every backend.
+
+    Args:
+        qudits: The indices of the qudits in the subsystem ``A``. If left as
+            ``None``, uses the first half of the qudits, i.e.
+            ``range(n_qudits // 2)``.
+        evaluation_times: The relative times at which to compute the entropy.
+            If left as ``None``, uses the ``default_evaluation_times`` of the
+            backend's ``EmulationConfig``.
+        tag_suffix: An optional suffix to append to the tag. Needed if
+            multiple instances of the same observable are given to the
+            same EmulationConfig.
+        default_aggregation_method: How to combine the values of this
+            observable from multiple results.
+    """
+
+    def __init__(
+        self,
+        qudits: Collection[int] | None = None,
+        *,
+        evaluation_times: Sequence[float] | None = None,
+        tag_suffix: str | None = None,
+        default_aggregation_method: AggregationMethod = AggregationMethod.MEAN,
+    ):
+        """Initializes the observable."""
+        super().__init__(
+            evaluation_times=evaluation_times,
+            tag_suffix=tag_suffix,
+            default_aggregation_method=default_aggregation_method,
+        )
+        self._qudits = (
+            None if qudits is None else self._validate_qudits(qudits)
+        )
+
+    @staticmethod
+    def _validate_qudits(qudits: Collection[int]) -> tuple[int, ...]:
+        if isinstance(qudits, (str, Mapping)) or not isinstance(
+            qudits, Collection
+        ):
+            raise TypeError(
+                "'qudits' must be a collection of qudit indices; got "
+                f"{type(qudits)} instead. Got {qudits!r}."
+            )
+        if len(qudits) == 0:
+            raise ValueError("'qudits' must contain at least one index.")
+        for index in qudits:
+            if isinstance(index, bool) or not isinstance(index, Integral):
+                raise TypeError(
+                    "The indices in 'qudits' must be integers; got "
+                    f"{index!r} of type {type(index)}."
+                )
+            if index < 0:
+                raise ValueError(
+                    "The indices in 'qudits' must be non-negative; got "
+                    f"{index!r}."
+                )
+        validated = tuple(sorted(int(i) for i in qudits))
+        if len(set(validated)) != len(validated):
+            raise ValueError(
+                f"'qudits' must not contain repeated indices; got {qudits!r}."
+            )
+        return validated
+
+    @property
+    def qudits(self) -> tuple[int, ...] | None:
+        """The indices of the qudits in the subsystem.
+
+        ``None`` means the first half of the qudits.
+        """
+        return self._qudits
+
+    @property
+    def _base_tag(self) -> str:
+        return "entanglement_entropy"
+
+    def _to_abstract_repr(self) -> dict[str, Any]:
+        repr = super()._to_abstract_repr()
+        repr["qudits"] = None if self._qudits is None else list(self._qudits)
+        return repr
+
+    def apply(self, *, state: State, **kwargs: Any) -> float:
+        """Calculates the observable to store in the Results."""
+        qudits = (
+            self._qudits
+            if self._qudits is not None
+            else range(state.n_qudits // 2)
+        )
+        return state.entanglement_entropy(qudits)
 
 
 class Energy(Observable):

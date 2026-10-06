@@ -2,6 +2,7 @@ import json
 import re
 from unittest.mock import MagicMock
 
+import jsonschema
 import numpy as np
 import pytest
 from pytest import mark
@@ -14,6 +15,7 @@ from pulser.backend import (
     Energy,
     EnergySecondMoment,
     EnergyVariance,
+    EntanglementEntropy,
     Expectation,
     Fidelity,
     Occupation,
@@ -70,6 +72,16 @@ class TestObservableRepr:
                 Occupation,
                 (),
                 {"one_state": "g"},
+            ),
+            (
+                EntanglementEntropy,
+                (),
+                {},
+            ),
+            (
+                EntanglementEntropy,
+                ([3, 1],),
+                {"tag_suffix": "13", "evaluation_times": [0.5, 1.0]},
             ),
             (
                 Energy,
@@ -281,6 +293,17 @@ class TestObservableRepr:
                 corrupted_obs_repr, StateRepr, OperatorRepr
             )
 
+    @mark.parametrize("bad_qudits", [[], [-1], [0, 0], [0.5], "0", 1])
+    def test_invalid_entanglement_entropy_schema(self, bad_qudits):
+        ser_config = json.loads(
+            EmulationConfig(
+                observables=[EntanglementEntropy([0])]
+            ).to_abstract_repr()
+        )
+        ser_config["observables"][0]["qudits"] = bad_qudits
+        with pytest.raises(jsonschema.exceptions.ValidationError):
+            EmulationConfig.from_abstract_repr(json.dumps(ser_config))
+
 
 class TestConfigRepr:
     example_state = StateRepr.from_state_amplitudes(
@@ -337,6 +360,10 @@ class TestConfigRepr:
                 CorrelationMatrix(),
             ),
             (Energy(), Occupation(one_state="0")),
+            (
+                EntanglementEntropy(),
+                EntanglementEntropy((0, 2), tag_suffix="02"),
+            ),
         ],
     )
     @mark.parametrize(
@@ -460,6 +487,11 @@ class TestStateRepr:
             state.overlap(state)
         with pytest.raises(NotImplementedError):
             state.sample(num_shots=10)
+        with pytest.raises(
+            NotImplementedError,
+            match="'StateRepr' does not support computing the entanglement",
+        ):
+            state.entanglement_entropy([0])
 
     @mark.parametrize(
         "expected_repr",

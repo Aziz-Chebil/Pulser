@@ -27,6 +27,7 @@ from pulser.backend.default_observables import (
     BitStrings,
     Energy,
     EnergyVariance,
+    EntanglementEntropy,
     Fidelity,
     Occupation,
     StateResult,
@@ -658,3 +659,51 @@ def test_run_from_sequence_samples(modulation):
     s2 = results2.final_state._state.full()
 
     assert np.allclose(s1, s2, atol=0, rtol=1e-16)  # really the same
+
+
+@pytest.mark.parametrize("with_noise", [False, True])
+def test_entanglement_entropy(with_noise):
+    # Two atoms within the blockade radius get entangled by the drive
+    reg = pulser.Register.from_coordinates([(0, 0), (5, 0)], prefix="q")
+    seq = pulser.Sequence(reg, pulser.MockDevice)
+    seq.declare_channel("ryd", "rydberg_global")
+    seq.add(
+        pulser.Pulse.ConstantDetuning(
+            pulser.BlackmanWaveform(1000, np.pi), 0.0, 0.0
+        ),
+        "ryd",
+    )
+    eval_times = [0.0, 0.5, 1.0]
+    entropy = EntanglementEntropy(evaluation_times=eval_times)
+    entropy_q1 = EntanglementEntropy(
+        [1], evaluation_times=eval_times, tag_suffix="q1"
+    )
+    state_res = StateResult(evaluation_times=eval_times)
+    noise_model = (
+        pulser.NoiseModel(dephasing_rate=0.5)
+        if with_noise
+        else pulser.NoiseModel()
+    )
+    results = QutipBackendV2(
+        seq,
+        config=QutipConfig(
+            observables=(entropy, entropy_q1, state_res),
+            noise_model=noise_model,
+        ),
+    ).run()
+
+    result_times = results.get_result_times(entropy)
+    assert len(result_times) == len(eval_times)
+    # The initial state is a product state
+    assert np.isclose(results.get_result(entropy, 0.0), 0.0, atol=1e-6)
+    # The final state is entangled (or mixed)
+    assert results.get_result(entropy, 1.0) > 0.1
+    for t in result_times:
+        qobj = results.get_result(state_res, t).to_qobj()
+        expected = qutip.entropy_vn(qobj.unit().ptrace([0]))
+        assert np.isclose(results.get_result(entropy, t), expected, atol=1e-6)
+        if not with_noise:
+            # For pure states, both halves have the same entropy
+            assert np.isclose(
+                results.get_result(entropy_q1, t), expected, atol=1e-6
+            )
